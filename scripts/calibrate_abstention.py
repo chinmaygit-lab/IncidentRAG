@@ -11,7 +11,7 @@ NO_ANSWER_PATH = Path("benchmark/no_answer_queries.json")
 
 
 def top_score(engine: IncidentRAG, query: str) -> float:
-    _, hits = engine.search(query, top_k=3)
+    _, hits = engine.raw_search(query, top_k=3)
     return hits[0].score if hits else 0.0
 
 
