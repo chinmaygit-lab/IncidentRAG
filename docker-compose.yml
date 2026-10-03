@@ -1,0 +1,12 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      INCIDENTRAG_DB: /data/incidentrag.db
+    volumes:
+      - incidentrag_data:/data
+
+volumes:
+  incidentrag_data:

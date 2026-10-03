@@ -1,0 +1,12 @@
+[
+  {"query": "P1 service=checkout HTTP 503 after deployment", "relevant_document_ids": ["checkout_503", "inc_checkout_2026_09"]},
+  {"query": "checkout is returning 503 upstream unavailable", "relevant_document_ids": ["checkout_503", "inc_checkout_2026_09"]},
+  {"query": "P1 service=payments HTTP 504 PAYMENT_TIMEOUT", "relevant_document_ids": ["payments_timeout", "inc_payments_2026_08"]},
+  {"query": "payment authorization calls timing out with 504", "relevant_document_ids": ["payments_timeout", "inc_payments_2026_08"]},
+  {"query": "P2 service=auth HTTP 401 TOKEN_INVALID", "relevant_document_ids": ["auth_401", "inc_auth_2026_07"]},
+  {"query": "token validation broke after key rotation", "relevant_document_ids": ["auth_401", "inc_auth_2026_07"]},
+  {"query": "P1 service=inventory HTTP 500 INVENTORY_DB_ERROR", "relevant_document_ids": ["inventory_500", "inc_inventory_2026_06"]},
+  {"query": "inventory failures after schema migration", "relevant_document_ids": ["inventory_500", "inc_inventory_2026_06"]},
+  {"query": "service=search SEARCH_SLOW high query latency", "relevant_document_ids": ["search_latency", "inc_search_2026_05"]},
+  {"query": "search got slow during index refresh", "relevant_document_ids": ["search_latency", "inc_search_2026_05"]}
+]

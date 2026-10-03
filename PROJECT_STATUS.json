@@ -1,0 +1,27 @@
+{
+  "name": "IncidentRAG",
+  "version": "0.1.0",
+  "phase": "foundation",
+  "implemented": [
+    "incident NLP parsing",
+    "deterministic chunking",
+    "from-scratch BM25",
+    "metadata-aware ranking",
+    "SQLite persistence",
+    "citations",
+    "evidence-only generation",
+    "retrieval evaluation",
+    "FastAPI",
+    "CLI",
+    "Docker",
+    "CI"
+  ],
+  "next": [
+    "larger benchmark corpus",
+    "PostgreSQL FTS",
+    "embeddings + pgvector",
+    "hybrid fusion",
+    "reranker",
+    "LLM generation with faithfulness evaluation"
+  ]
+}
