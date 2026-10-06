@@ -1,12 +1,19 @@
 services:
-  api:
-    build: .
-    ports:
-      - "8000:8000"
+  postgres:
+    image: pgvector/pgvector:pg17
     environment:
-      INCIDENTRAG_DB: /data/incidentrag.db
+      POSTGRES_DB: incidentrag
+      POSTGRES_USER: incidentrag_app
+      POSTGRES_PASSWORD: incidentrag_dev_only
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U incidentrag_app -d incidentrag"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
     volumes:
-      - incidentrag_data:/data
+      - incidentrag_pg:/var/lib/postgresql/data
 
 volumes:
-  incidentrag_data:
+  incidentrag_pg:

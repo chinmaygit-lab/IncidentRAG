@@ -1,6 +1,16 @@
-"""IncidentRAG: evidence-grounded incident retrieval foundation."""
+"""IncidentRAG: grounded incident-response retrieval with hybrid search."""
 
+from .models import Answer, Chunk, Citation, Document, ParsedIncident, SearchHit
 from .service import IncidentRAG
 
-__all__ = ["IncidentRAG"]
-__version__ = "0.1.0"
+__all__ = [
+    "Answer",
+    "Chunk",
+    "Citation",
+    "Document",
+    "IncidentRAG",
+    "ParsedIncident",
+    "SearchHit",
+]
+
+__version__ = "1.0.2"

@@ -1,44 +1,56 @@
-import importlib
+from pathlib import Path
 
+import pytest
+
+pytest.importorskip("fastapi")
+pytest.importorskip("httpx")
 from fastapi.testclient import TestClient
 
-
-def _client(tmp_path, monkeypatch):
-    monkeypatch.setenv("INCIDENTRAG_DB", str(tmp_path / "api.db"))
-    import incidentrag.api as api
-
-    importlib.reload(api)
-    return TestClient(api.app)
+from incidentrag import api
+from incidentrag.service import IncidentRAG, load_documents_from_directory
 
 
-def test_health(tmp_path, monkeypatch):
-    client = _client(tmp_path, monkeypatch)
-    response = client.get("/health")
+@pytest.fixture()
+def client(tmp_path: Path, sample_root: Path):
+    engine = IncidentRAG(tmp_path / "api.db", abstention_threshold=0.85)
+    engine.ingest_many(load_documents_from_directory(sample_root))
+    api.get_engine.cache_clear()
+    app = api.create_app()
+    app.dependency_overrides[api.get_engine] = lambda: engine
+    return TestClient(app)
+
+
+def test_health(client):
+    response = client.get("/healthz")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json()["documents"] == 20
 
 
-def test_ingest_search_and_answer(tmp_path, monkeypatch):
-    client = _client(tmp_path, monkeypatch)
-    payload = {
-        "id": "runbook-x",
-        "title": "Checkout 503",
-        "text": (
-            "service checkout returns HTTP 503 after deployment. Check readiness and rollback if approved."
-        ),
-        "source_type": "runbook",
-        "metadata": {"service": "checkout", "http_status": 503},
-    }
-    assert client.post("/documents", json=payload).status_code == 200
-    search = client.post("/search", json={"query": "service=checkout HTTP 503", "top_k": 3})
-    assert search.status_code == 200
-    assert search.json()["citations"][0]["document_id"] == "runbook-x"
-    answer = client.post("/answer", json={"query": "service=checkout HTTP 503", "top_k": 3})
-    assert answer.status_code == 200
-    assert "Checkout 503" in answer.json()["answer"]
+def test_search(client):
+    response = client.post("/v1/search", json={"query": "service=checkout HTTP 503", "top_k": 3})
+    assert response.status_code == 200
+    assert response.json()["hits"][0]["document_id"] in {"checkout_503", "inc_checkout_2026"}
 
 
-def test_answer_404_when_no_evidence(tmp_path, monkeypatch):
-    client = _client(tmp_path, monkeypatch)
-    response = client.post("/answer", json={"query": "nothing here", "top_k": 3})
-    assert response.status_code == 404
+def test_answer(client):
+    response = client.post("/v1/answer", json={"query": "service=auth HTTP 401 TOKEN_EXPIRED"})
+    assert response.status_code == 200
+    assert response.json()["citations"]
+
+
+def test_validation_rejects_empty_query(client):
+    response = client.post("/v1/search", json={"query": ""})
+    assert response.status_code == 422
+
+
+def test_api_key_guard(tmp_path, sample_root, monkeypatch):
+    engine = IncidentRAG(tmp_path / "api-key.db")
+    engine.ingest_many(load_documents_from_directory(sample_root))
+    monkeypatch.setenv("INCIDENTRAG_API_KEY", "secret-key")
+    app = api.create_app()
+    app.dependency_overrides[api.get_engine] = lambda: engine
+    client = TestClient(app)
+    assert client.post("/v1/search", json={"query": "checkout"}).status_code == 401
+    assert client.post(
+        "/v1/search", json={"query": "checkout"}, headers={"x-api-key": "secret-key"}
+    ).status_code == 200

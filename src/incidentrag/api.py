@@ -1,87 +1,114 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from functools import lru_cache
+from typing import Annotated, Any
 
-from fastapi import FastAPI, HTTPException
+from .config import Settings
+from .service import IncidentRAG, load_documents_from_directory
 
-from .models import AnswerResponse, CitationModel, Document, IngestRequest, QueryRequest, SearchResponse
-from .service import IncidentRAG
+try:
+    from fastapi import Depends, FastAPI, Header, HTTPException
+    from pydantic import BaseModel, Field
+except ImportError as exc:  # pragma: no cover - optional dependency guard
+    raise RuntimeError("API support requires: pip install .[api]") from exc
 
-DB_PATH = Path(os.getenv("INCIDENTRAG_DB", "incidentrag.db"))
-engine = IncidentRAG(DB_PATH)
-app = FastAPI(title="IncidentRAG", version="0.1.0")
+
+class SearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=4000)
+    top_k: int = Field(default=5, ge=1, le=20)
 
 
-def _citation(hit) -> CitationModel:
-    compact = " ".join(hit.chunk.text.split())
-    excerpt = compact[:500] + ("…" if len(compact) > 500 else "")
-    return CitationModel(
-        document_id=hit.chunk.document_id,
-        chunk_id=hit.chunk.id,
-        title=hit.chunk.title,
-        source_type=hit.chunk.source_type,
-        excerpt=excerpt,
-        score=round(hit.score, 6),
+class AnswerRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=4000)
+    top_k: int = Field(default=3, ge=1, le=10)
+
+
+@lru_cache(maxsize=1)
+def get_engine() -> IncidentRAG:
+    settings = Settings.from_env()
+    engine = IncidentRAG(
+        settings.database_path,
+        abstention_threshold=settings.abstention_threshold,
+        abstention_min_margin=settings.abstention_min_margin,
     )
+    sample_root = os.getenv("INCIDENTRAG_SAMPLE_ROOT")
+    if sample_root and engine.store.count_documents() == 0:
+        engine.ingest_many(load_documents_from_directory(sample_root))
+    return engine
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def _authorize(x_api_key: Annotated[str | None, Header()] = None) -> None:
+    expected = Settings.from_env().api_key
+    if expected and x_api_key != expected:
+        raise HTTPException(status_code=401, detail="invalid API key")
 
 
-@app.post("/documents")
-def ingest_document(request: IngestRequest) -> dict[str, int | str]:
-    document = Document(
-        id=request.id,
-        title=request.title,
-        text=request.text,
-        source_type=request.source_type,
-        metadata=request.metadata,
-    )
-    chunk_count = engine.ingest(document)
-    return {"document_id": document.id, "chunks": chunk_count}
+EngineDep = Annotated[IncidentRAG, Depends(get_engine)]
 
 
-@app.get("/documents")
-def list_documents() -> list[dict]:
-    return [
-        {"id": d.id, "title": d.title, "source_type": d.source_type, "metadata": d.metadata}
-        for d in engine.store.list_documents()
-    ]
+def create_app() -> FastAPI:
+    app = FastAPI(title="IncidentRAG", version="1.0.2")
+
+    @app.get("/healthz")
+    def health(engine: EngineDep) -> dict[str, Any]:
+        return engine.health()
+
+    @app.get("/readyz")
+    def ready(engine: EngineDep) -> dict[str, Any]:
+        return {"ready": True, "documents": engine.store.count_documents()}
+
+    @app.post("/v1/search", dependencies=[Depends(_authorize)])
+    def search(request: SearchRequest, engine: EngineDep) -> dict[str, Any]:
+        parsed, hits = engine.search(request.query, top_k=request.top_k)
+        return {
+            "parsed": {
+                "service": parsed.service,
+                "severity": parsed.severity,
+                "http_status": parsed.http_status,
+                "error_code": parsed.error_code,
+            },
+            "hits": [
+                {
+                    "document_id": hit.chunk.document_id,
+                    "chunk_id": hit.chunk.id,
+                    "title": hit.chunk.title,
+                    "score": round(hit.score, 6),
+                    "lexical_score": round(hit.lexical_score, 6),
+                    "dense_score": round(hit.dense_score, 6),
+                    "rrf_score": round(hit.rrf_score, 6),
+                    "matched_fields": hit.matched_fields,
+                }
+                for hit in hits
+            ],
+        }
+
+    @app.post("/v1/answer", dependencies=[Depends(_authorize)])
+    def answer(request: AnswerRequest, engine: EngineDep) -> dict[str, Any]:
+        result = engine.answer(request.query, top_k=request.top_k)
+        return {
+            "query": result.query,
+            "text": result.text,
+            "abstained": result.abstained,
+            "confidence": round(result.confidence, 6),
+            "citations": [
+                {
+                    "index": citation.index,
+                    "document_id": citation.document_id,
+                    "chunk_id": citation.chunk_id,
+                    "title": citation.title,
+                    "score": round(citation.score, 6),
+                    "excerpt": citation.excerpt,
+                }
+                for citation in result.citations
+            ],
+        }
+
+    @app.get("/v1/metrics", dependencies=[Depends(_authorize)])
+    def metrics(engine: EngineDep) -> dict[str, Any]:
+        return engine.telemetry.snapshot()
+
+    return app
 
 
-@app.post("/search", response_model=SearchResponse)
-def search(request: QueryRequest) -> SearchResponse:
-    parsed, hits = engine.search(request.query, top_k=request.top_k)
-    return SearchResponse(
-        query=request.query,
-        parsed={
-            "severity": parsed.severity,
-            "service": parsed.service,
-            "http_status": parsed.http_status,
-            "error_codes": parsed.error_codes,
-            "keywords": parsed.keywords,
-        },
-        citations=[_citation(hit) for hit in hits],
-    )
-
-
-@app.post("/answer", response_model=AnswerResponse)
-def answer(request: QueryRequest) -> AnswerResponse:
-    parsed, hits, generated = engine.answer(request.query, top_k=request.top_k)
-    if not hits:
-        raise HTTPException(status_code=404, detail="No relevant evidence found")
-    return AnswerResponse(
-        query=request.query,
-        parsed={
-            "severity": parsed.severity,
-            "service": parsed.service,
-            "http_status": parsed.http_status,
-            "error_codes": parsed.error_codes,
-            "keywords": parsed.keywords,
-        },
-        citations=[_citation(hit) for hit in hits],
-        answer=generated,
-    )
+app = create_app()

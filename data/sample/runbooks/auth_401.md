@@ -1,13 +1,20 @@
-# Authentication 401 Runbook
+# Auth 401 Token Validation Runbook
 service: auth
+severity: P1
 http_status: 401
-error_code: TOKEN_INVALID
+error_code: TOKEN_EXPIRED
 
 ## Symptoms
-Clients receive HTTP 401 and token validation errors. TOKEN_INVALID may appear after key rotation or issuer configuration changes.
+Valid users receive 401 because token validation rejects recently issued tokens. The canonical error code is TOKEN_EXPIRED.
 
-## Checks
-Verify signing-key availability, issuer and audience configuration, token clock skew, and recent authentication deployments.
+## Likely causes
+The leading hypothesis is clock skew, stale signing keys, or token expiry configuration. Confirm evidence before remediation.
 
-## Recovery
-Restore the last known-good key/configuration only through the controlled authentication change process.
+## Investigation and remediation
+- Check clock skew across auth nodes and identity provider hosts.
+- Verify the active signing key set matches the identity provider JWKS.
+- Restore time synchronization before rotating keys.
+- Compare token validation success after synchronization.
+
+## Guardrails
+Do not execute destructive changes without the normal production approval path. Preserve evidence and correlate timestamps before escalation.

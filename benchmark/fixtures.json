@@ -1,12 +1,362 @@
 [
-  {"query": "P1 service=checkout HTTP 503 after deployment", "relevant_document_ids": ["checkout_503", "inc_checkout_2026_09"]},
-  {"query": "checkout is returning 503 upstream unavailable", "relevant_document_ids": ["checkout_503", "inc_checkout_2026_09"]},
-  {"query": "P1 service=payments HTTP 504 PAYMENT_TIMEOUT", "relevant_document_ids": ["payments_timeout", "inc_payments_2026_08"]},
-  {"query": "payment authorization calls timing out with 504", "relevant_document_ids": ["payments_timeout", "inc_payments_2026_08"]},
-  {"query": "P2 service=auth HTTP 401 TOKEN_INVALID", "relevant_document_ids": ["auth_401", "inc_auth_2026_07"]},
-  {"query": "token validation broke after key rotation", "relevant_document_ids": ["auth_401", "inc_auth_2026_07"]},
-  {"query": "P1 service=inventory HTTP 500 INVENTORY_DB_ERROR", "relevant_document_ids": ["inventory_500", "inc_inventory_2026_06"]},
-  {"query": "inventory failures after schema migration", "relevant_document_ids": ["inventory_500", "inc_inventory_2026_06"]},
-  {"query": "service=search SEARCH_SLOW high query latency", "relevant_document_ids": ["search_latency", "inc_search_2026_05"]},
-  {"query": "search got slow during index refresh", "relevant_document_ids": ["search_latency", "inc_search_2026_05"]}
+  {
+    "query": "P1 service=checkout HTTP 503 error_code=UPSTREAM_UNAVAILABLE",
+    "expected_document_ids": [
+      "checkout_503",
+      "inc_checkout_2026"
+    ]
+  },
+  {
+    "query": "checkout service is returning 503 and upstream unavailable",
+    "expected_document_ids": [
+      "checkout_503",
+      "inc_checkout_2026"
+    ]
+  },
+  {
+    "query": "alert: checkout 503 after change; need evidence for a readiness regression or upstream connection failure",
+    "expected_document_ids": [
+      "checkout_503",
+      "inc_checkout_2026"
+    ]
+  },
+  {
+    "query": "what runbook applies when checkout requests fail immediately after a deployment because readiness probes exclude healthy pods?",
+    "expected_document_ids": [
+      "checkout_503",
+      "inc_checkout_2026"
+    ]
+  },
+  {
+    "query": "P1 service=payments HTTP 502 error_code=PAYMENT_GATEWAY_TIMEOUT",
+    "expected_document_ids": [
+      "payments_502",
+      "inc_payments_2026"
+    ]
+  },
+  {
+    "query": "payments service is returning 502 and payment gateway timeout",
+    "expected_document_ids": [
+      "payments_502",
+      "inc_payments_2026"
+    ]
+  },
+  {
+    "query": "alert: payments 502 after change; need evidence for provider latency or an exhausted outbound connection pool",
+    "expected_document_ids": [
+      "payments_502",
+      "inc_payments_2026"
+    ]
+  },
+  {
+    "query": "what runbook applies when payment authorization returns 502 while the external gateway latency spikes?",
+    "expected_document_ids": [
+      "payments_502",
+      "inc_payments_2026"
+    ]
+  },
+  {
+    "query": "P1 service=inventory HTTP 500 error_code=INVENTORY_DB_ERROR",
+    "expected_document_ids": [
+      "inventory_500",
+      "inc_inventory_2026"
+    ]
+  },
+  {
+    "query": "inventory service is returning 500 and inventory db error",
+    "expected_document_ids": [
+      "inventory_500",
+      "inc_inventory_2026"
+    ]
+  },
+  {
+    "query": "alert: inventory 500 after change; need evidence for an incompatible migration or missing column",
+    "expected_document_ids": [
+      "inventory_500",
+      "inc_inventory_2026"
+    ]
+  },
+  {
+    "query": "what runbook applies when inventory writes return 500 after a schema migration?",
+    "expected_document_ids": [
+      "inventory_500",
+      "inc_inventory_2026"
+    ]
+  },
+  {
+    "query": "P1 service=auth HTTP 401 error_code=TOKEN_EXPIRED",
+    "expected_document_ids": [
+      "auth_401",
+      "inc_auth_2026"
+    ]
+  },
+  {
+    "query": "auth service is returning 401 and token expired",
+    "expected_document_ids": [
+      "auth_401",
+      "inc_auth_2026"
+    ]
+  },
+  {
+    "query": "alert: auth 401 after change; need evidence for clock skew, stale signing keys, or token expiry configuration",
+    "expected_document_ids": [
+      "auth_401",
+      "inc_auth_2026"
+    ]
+  },
+  {
+    "query": "what runbook applies when valid users receive 401 because token validation rejects recently issued tokens?",
+    "expected_document_ids": [
+      "auth_401",
+      "inc_auth_2026"
+    ]
+  },
+  {
+    "query": "P1 service=search HTTP 429 error_code=RATE_LIMITED",
+    "expected_document_ids": [
+      "search_429",
+      "inc_search_2026"
+    ]
+  },
+  {
+    "query": "search service is returning 429 and rate limited",
+    "expected_document_ids": [
+      "search_429",
+      "inc_search_2026"
+    ]
+  },
+  {
+    "query": "alert: search 429 after change; need evidence for rate limiter saturation or insufficient query capacity",
+    "expected_document_ids": [
+      "search_429",
+      "inc_search_2026"
+    ]
+  },
+  {
+    "query": "what runbook applies when search traffic receives 429 during a demand spike?",
+    "expected_document_ids": [
+      "search_429",
+      "inc_search_2026"
+    ]
+  },
+  {
+    "query": "P1 service=orders HTTP 504 error_code=DB_POOL_EXHAUSTED",
+    "expected_document_ids": [
+      "orders_504",
+      "inc_orders_2026"
+    ]
+  },
+  {
+    "query": "orders service is returning 504 and db pool exhausted",
+    "expected_document_ids": [
+      "orders_504",
+      "inc_orders_2026"
+    ]
+  },
+  {
+    "query": "alert: orders 504 after change; need evidence for pool exhaustion caused by slow queries or leaked connections",
+    "expected_document_ids": [
+      "orders_504",
+      "inc_orders_2026"
+    ]
+  },
+  {
+    "query": "what runbook applies when order creation times out with 504 while database pool wait time increases?",
+    "expected_document_ids": [
+      "orders_504",
+      "inc_orders_2026"
+    ]
+  },
+  {
+    "query": "P1 service=notifications HTTP 500 error_code=SMTP_PROVIDER_ERROR",
+    "expected_document_ids": [
+      "notifications_500",
+      "inc_notifications_2026"
+    ]
+  },
+  {
+    "query": "notifications service is returning 500 and smtp provider error",
+    "expected_document_ids": [
+      "notifications_500",
+      "inc_notifications_2026"
+    ]
+  },
+  {
+    "query": "alert: notifications 500 after change; need evidence for provider outage, rejected credentials, or API quota failure",
+    "expected_document_ids": [
+      "notifications_500",
+      "inc_notifications_2026"
+    ]
+  },
+  {
+    "query": "what runbook applies when email notification jobs fail with 500 while provider delivery errors rise?",
+    "expected_document_ids": [
+      "notifications_500",
+      "inc_notifications_2026"
+    ]
+  },
+  {
+    "query": "P1 service=catalog HTTP 404 error_code=STALE_CACHE",
+    "expected_document_ids": [
+      "catalog_404",
+      "inc_catalog_2026"
+    ]
+  },
+  {
+    "query": "catalog service is returning 404 and stale cache",
+    "expected_document_ids": [
+      "catalog_404",
+      "inc_catalog_2026"
+    ]
+  },
+  {
+    "query": "alert: catalog 404 after change; need evidence for stale edge cache or delayed search index propagation",
+    "expected_document_ids": [
+      "catalog_404",
+      "inc_catalog_2026"
+    ]
+  },
+  {
+    "query": "what runbook applies when recent catalog items return 404 even though records exist in the database?",
+    "expected_document_ids": [
+      "catalog_404",
+      "inc_catalog_2026"
+    ]
+  },
+  {
+    "query": "P1 service=shipping HTTP 503 error_code=CARRIER_UNAVAILABLE",
+    "expected_document_ids": [
+      "shipping_503",
+      "inc_shipping_2026"
+    ]
+  },
+  {
+    "query": "shipping service is returning 503 and carrier unavailable",
+    "expected_document_ids": [
+      "shipping_503",
+      "inc_shipping_2026"
+    ]
+  },
+  {
+    "query": "alert: shipping 503 after change; need evidence for carrier outage or exhausted carrier client connections",
+    "expected_document_ids": [
+      "shipping_503",
+      "inc_shipping_2026"
+    ]
+  },
+  {
+    "query": "what runbook applies when shipping quote requests return 503 when the primary carrier API is unavailable?",
+    "expected_document_ids": [
+      "shipping_503",
+      "inc_shipping_2026"
+    ]
+  },
+  {
+    "query": "P1 service=profile HTTP 500 error_code=SCHEMA_MISMATCH",
+    "expected_document_ids": [
+      "profile_500",
+      "inc_profile_2026"
+    ]
+  },
+  {
+    "query": "profile service is returning 500 and schema mismatch",
+    "expected_document_ids": [
+      "profile_500",
+      "inc_profile_2026"
+    ]
+  },
+  {
+    "query": "alert: profile 500 after change; need evidence for application schema mismatch between deployed versions",
+    "expected_document_ids": [
+      "profile_500",
+      "inc_profile_2026"
+    ]
+  },
+  {
+    "query": "what runbook applies when profile reads return 500 after a deployment changes a response field?",
+    "expected_document_ids": [
+      "profile_500",
+      "inc_profile_2026"
+    ]
+  },
+  {
+    "query": "P1 service=video HTTP 507 disk quota exceeded after transcoder deployment",
+    "expected_document_ids": []
+  },
+  {
+    "query": "service=analytics HTTP 418 teapot response from experiment gateway",
+    "expected_document_ids": []
+  },
+  {
+    "query": "DNS NXDOMAIN for internal service mesh control plane",
+    "expected_document_ids": []
+  },
+  {
+    "query": "Kafka consumer lag on fraud-events topic with no HTTP symptoms",
+    "expected_document_ids": []
+  },
+  {
+    "query": "Kubernetes node reports GPU ECC hardware fault",
+    "expected_document_ids": []
+  },
+  {
+    "query": "Redis cluster split brain in recommendations service",
+    "expected_document_ids": []
+  },
+  {
+    "query": "certificate expires tomorrow for api.example.invalid",
+    "expected_document_ids": []
+  },
+  {
+    "query": "S3 replication delay in backup archive bucket",
+    "expected_document_ids": []
+  },
+  {
+    "query": "CPU thermal throttling on bare metal database host",
+    "expected_document_ids": []
+  },
+  {
+    "query": "service=media HTTP 206 partial content corruption",
+    "expected_document_ids": []
+  },
+  {
+    "query": "mobile app crash caused by native segmentation fault",
+    "expected_document_ids": []
+  },
+  {
+    "query": "P2 service=ledger HTTP 409 duplicate transaction conflict",
+    "expected_document_ids": []
+  },
+  {
+    "query": "etcd quorum loss in staging cluster",
+    "expected_document_ids": []
+  },
+  {
+    "query": "BGP route withdrawal from edge router",
+    "expected_document_ids": []
+  },
+  {
+    "query": "service=fraud HTTP 451 policy rejection",
+    "expected_document_ids": []
+  },
+  {
+    "query": "filesystem inode exhaustion on log collector",
+    "expected_document_ids": []
+  },
+  {
+    "query": "NTP leap second alert without auth failures",
+    "expected_document_ids": []
+  },
+  {
+    "query": "service=reporting HTTP 413 payload too large",
+    "expected_document_ids": []
+  },
+  {
+    "query": "message broker TLS handshake unknown ca",
+    "expected_document_ids": []
+  },
+  {
+    "query": "object storage checksum mismatch during restore",
+    "expected_document_ids": []
+  }
 ]

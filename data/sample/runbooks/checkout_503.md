@@ -1,13 +1,20 @@
-# Checkout 503 Runbook
+# Checkout 503 Deployment Runbook
 service: checkout
+severity: P1
 http_status: 503
 error_code: UPSTREAM_UNAVAILABLE
 
 ## Symptoms
-Checkout requests return HTTP 503 shortly after a deployment. The API gateway may report upstream unavailable or connection failures.
+Checkout requests fail immediately after a deployment because readiness probes exclude healthy pods. The canonical error code is UPSTREAM_UNAVAILABLE.
 
-## Checks
-Confirm the checkout deployment is healthy, compare the rollout revision with the previous healthy revision, and verify downstream payment and inventory health. Inspect readiness probes before increasing traffic.
+## Likely causes
+The leading hypothesis is a readiness regression or upstream connection failure. Confirm evidence before remediation.
 
-## Recovery
-If failures correlate with the latest checkout rollout and readiness is degraded, follow the approved rollback procedure. Record the rollout revision and timestamps in the incident.
+## Investigation and remediation
+- Check deployment events and readiness probe failures before changing traffic.
+- Verify healthy checkout pods are registered behind the gateway.
+- Rollback the latest checkout deployment when the readiness regression is confirmed.
+- Compare error rate and readiness health after rollback.
+
+## Guardrails
+Do not execute destructive changes without the normal production approval path. Preserve evidence and correlate timestamps before escalation.

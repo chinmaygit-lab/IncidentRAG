@@ -1,75 +1,88 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from .bm25 import BM25Index
-from .models import ParsedIncident, SearchHit
-from .nlp import parse_incident, tokenize
-from .storage import SQLiteStore
+from .dense import DenseIndex, HashingEmbedder
+from .fusion import reciprocal_rank_fusion
+from .models import Chunk, ParsedIncident, SearchHit
+from .parsing import parse_incident
+from .rerank import rerank_score
 
 
-class IncidentRetriever:
-    def __init__(self, store: SQLiteStore) -> None:
-        self.store = store
+def _search_text(chunk: Chunk) -> str:
+    metadata = " ".join(f"{key} {value}" for key, value in sorted(chunk.metadata.items()))
+    return f"{chunk.title}\n{chunk.text}\n{metadata}"
 
-    @staticmethod
-    def _query_tokens(parsed: ParsedIncident) -> list[str]:
-        tokens = tokenize(parsed.raw)
-        structured = [
-            parsed.service,
-            str(parsed.http_status) if parsed.http_status else None,
-            parsed.severity.lower() if parsed.severity else None,
-            *(code.lower() for code in parsed.error_codes),
-        ]
-        for token in structured:
-            if token and token not in tokens:
-                tokens.append(token)
-        return tokens
 
-    @staticmethod
-    def _metadata_boost(parsed: ParsedIncident, metadata: dict, text: str) -> tuple[float, list[str]]:
-        boost = 0.0
-        matched: list[str] = []
-        lowered = text.lower()
-        service = str(metadata.get("service", "")).lower()
-        if parsed.service and (parsed.service == service or parsed.service in lowered):
-            boost += 2.5
-            matched.append("service")
-        if parsed.http_status and (
-            str(parsed.http_status) == str(metadata.get("http_status", "")) or str(parsed.http_status) in text
-        ):
-            boost += 1.5
-            matched.append("http_status")
-        if parsed.severity and parsed.severity == str(metadata.get("severity", "")).upper():
-            boost += 0.35
-            matched.append("severity")
-        for code in parsed.error_codes:
-            if code.lower() in lowered or code.lower() == str(metadata.get("error_code", "")).lower():
-                boost += 1.0
-                matched.append(f"error:{code}")
-        return boost, matched
+def _normalize_scores(ranking: list[tuple[str, float]]) -> dict[str, float]:
+    if not ranking:
+        return {}
+    values = [score for _, score in ranking]
+    maximum = max(values)
+    minimum = min(values)
+    if maximum <= 0:
+        return {identifier: 0.0 for identifier, _ in ranking}
+    if maximum == minimum:
+        return {identifier: 1.0 if maximum > 0 else 0.0 for identifier, _ in ranking}
+    return {identifier: max(0.0, (score - minimum) / (maximum - minimum)) for identifier, score in ranking}
 
-    def search(self, query: str, top_k: int = 5) -> tuple[ParsedIncident, list[SearchHit]]:
-        parsed = parse_incident(query)
-        chunks = self.store.list_chunks()
-        if not chunks:
-            return parsed, []
 
-        index = BM25Index.from_texts([(chunk.id, f"{chunk.title}\n{chunk.text}") for chunk in chunks])
-        score_map = dict(index.score_tokens(self._query_tokens(parsed)))
+@dataclass
+class HybridRetriever:
+    chunks: list[Chunk]
+    embedder: HashingEmbedder | None = None
+
+    def __post_init__(self) -> None:
+        items = [(chunk.id, _search_text(chunk)) for chunk in self.chunks]
+        self._by_id = {chunk.id: chunk for chunk in self.chunks}
+        self._lexical = BM25Index.from_texts(items)
+        self._dense = DenseIndex(items, self.embedder or HashingEmbedder())
+
+    def search(
+        self,
+        query: str,
+        *,
+        top_k: int = 5,
+        parsed: ParsedIncident | None = None,
+    ) -> tuple[ParsedIncident, list[SearchHit]]:
+        if top_k <= 0:
+            raise ValueError("top_k must be positive")
+        parsed = parsed or parse_incident(query)
+
+        lexical = self._lexical.score(query)
+        dense = self._dense.score(query)
+        rrf = reciprocal_rank_fusion([lexical, dense])
+
+        lexical_norm = _normalize_scores(lexical)
+        dense_shifted = [(identifier, max(0.0, score)) for identifier, score in dense]
+        dense_norm = _normalize_scores(dense_shifted)
+        rrf_norm = _normalize_scores(rrf)
+
+        lexical_raw = dict(lexical)
+        dense_raw = dict(dense)
+        rrf_raw = dict(rrf)
+
         hits: list[SearchHit] = []
-        for chunk in chunks:
-            lexical = score_map.get(chunk.id, 0.0)
-            boost, matched = self._metadata_boost(parsed, chunk.metadata, chunk.text)
-            score = lexical + boost
-            if score <= 0:
-                continue
+        for chunk_id, chunk in self._by_id.items():
+            final, matched = rerank_score(
+                query=query,
+                parsed=parsed,
+                chunk=chunk,
+                lexical_norm=lexical_norm.get(chunk_id, 0.0),
+                dense_norm=dense_norm.get(chunk_id, 0.0),
+                rrf_norm=rrf_norm.get(chunk_id, 0.0),
+            )
             hits.append(
                 SearchHit(
                     chunk=chunk,
-                    score=score,
-                    lexical_score=lexical,
-                    metadata_boost=boost,
+                    score=final,
+                    lexical_score=lexical_raw.get(chunk_id, 0.0),
+                    dense_score=dense_raw.get(chunk_id, 0.0),
+                    rrf_score=rrf_raw.get(chunk_id, 0.0),
+                    rerank_score=final,
                     matched_fields=matched,
                 )
             )
-        hits.sort(key=lambda hit: (-hit.score, -hit.lexical_score, hit.chunk.id))
+        hits.sort(key=lambda hit: (-hit.score, hit.chunk.id))
         return parsed, hits[:top_k]

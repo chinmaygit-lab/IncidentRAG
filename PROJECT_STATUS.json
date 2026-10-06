@@ -1,27 +1,32 @@
 {
-  "name": "IncidentRAG",
-  "version": "0.1.0",
-  "phase": "foundation",
+  "project": "IncidentRAG",
+  "version": "1.0.2",
+  "status": "portfolio_complete",
+  "core_mode": "offline",
+  "sample_documents": 20,
+  "benchmark_queries": 60,
   "implemented": [
-    "incident NLP parsing",
+    "incident parsing",
     "deterministic chunking",
-    "from-scratch BM25",
-    "metadata-aware ranking",
-    "SQLite persistence",
-    "citations",
-    "evidence-only generation",
-    "retrieval evaluation",
+    "BM25",
+    "offline dense retrieval",
+    "RRF hybrid fusion",
+    "metadata reranking",
+    "abstention calibration",
+    "grounded citations",
+    "SQLite",
+    "PostgreSQL FTS adapter",
+    "pgvector adapter",
     "FastAPI",
     "CLI",
-    "Docker",
-    "CI"
+    "telemetry",
+    "CI",
+    "Docker"
   ],
-  "next": [
-    "larger benchmark corpus",
-    "PostgreSQL FTS",
-    "embeddings + pgvector",
-    "hybrid fusion",
-    "reranker",
-    "LLM generation with faithfulness evaluation"
+  "production_external_validation_required": [
+    "representative private corpus evaluation",
+    "live PostgreSQL/pgvector integration in deployment environment",
+    "chosen LLM provider quality/safety evaluation",
+    "load and security testing"
   ]
 }

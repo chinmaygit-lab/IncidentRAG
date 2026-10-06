@@ -1,180 +1,161 @@
-# IncidentRAG
+# IncidentRAG v1.0.2
 
-IncidentRAG is a **foundational incident-response retrieval system** built to learn the core engineering behind NLP + RAG before adding agent/workflow complexity.
+IncidentRAG is a portfolio-grade incident-response retrieval system that finds operational evidence from runbooks and historical incidents, combines lexical and dense retrieval, reranks evidence, abstains when support is weak, and produces citation-grounded investigation guidance.
 
-It accepts an operational alert such as:
+The core path is deliberately **offline-runnable**. You can validate the complete retrieval and grounding pipeline without an API key, Docker, PostgreSQL, or a hosted embedding model. PostgreSQL FTS, pgvector, and an OpenAI-compatible LLM adapter are included as optional production-style extensions.
 
-```text
-P1 service=checkout HTTP 503 after deployment
-```
+## What is implemented
 
-and performs:
+- Incident parsing for service, severity, HTTP status, and error codes.
+- Deterministic paragraph-aware chunking with stable SHA-256 chunk IDs.
+- BM25 implemented in the repository.
+- Deterministic 256-dimensional signed feature-hashing embeddings for an offline dense baseline.
+- Hybrid retrieval with reciprocal-rank fusion (RRF).
+- Metadata-aware lightweight reranking.
+- Calibrated confidence/abstention policy.
+- Evidence-only extractive answer generation with exact chunk citations.
+- Optional callable/model-backed generator with citation validation.
+- SQLite persistence for a zero-setup local experience.
+- PostgreSQL full-text-search schema using generated `tsvector`, GIN, `websearch_to_tsquery`, and `ts_rank_cd`.
+- Optional pgvector schema using 256-dimensional vectors and HNSW cosine search.
+- FastAPI endpoints, optional API-key guard, CLI, health/readiness, and in-process telemetry.
+- Synthetic sample corpus: 10 runbooks + 10 historical incidents.
+- 60-query benchmark: 40 answerable + 20 adversarial/no-answer queries.
+- CI, Dockerfile, Compose/Postgres profile, Windows/Unix bootstrap, validation scripts, tests, and release docs.
+
+## Architecture
 
 ```text
 incident text
-   ↓
-structured NLP extraction
-(service / severity / HTTP status / error codes)
-   ↓
-runbook + postmortem chunking
-   ↓
-from-scratch BM25 retrieval
-   ↓
-metadata-aware ranking boosts
-   ↓
-ranked evidence + citations
-   ↓
-Recall@K / MRR / nDCG / Hit@1 evaluation
-   ↓
-FastAPI + CLI
+    |
+    v
+signal parser -------- service / severity / HTTP / error code
+    |
+    v
+query representation
+    |                         |
+    |                         +--> deterministic dense embedding
+    +--> BM25 lexical search       (offline baseline)
+              |                    |
+              +---------+----------+
+                        v
+                   RRF fusion
+                        |
+                        v
+              metadata-aware reranker
+                        |
+                        v
+               confidence / abstention
+                 |               |
+           weak evidence     strong evidence
+                 |               |
+              abstain       grounded generator
+                                 |
+                                 v
+                         answer + citations
 ```
 
-## Why this repository exists
+Optional production adapters replace or augment local retrieval with PostgreSQL FTS and pgvector; the grounding contract remains the same.
 
-This is deliberately **not** a generic “chat with documents” project. The learning goal is to make retrieval behavior inspectable and measurable before embeddings, rerankers, LLM orchestration, or durable agents are introduced.
+## Fast start
 
-The first release therefore emphasizes:
-
-- deterministic incident parsing;
-- explainable lexical retrieval;
-- provenance and citations;
-- retrieval benchmarks;
-- persistent SQLite ingestion;
-- a clean service/API boundary;
-- testable failure behavior.
-
-The response generator is intentionally evidence-only and deterministic. It does not invent remediation steps that are absent from retrieved material. A later phase can add a real LLM behind the same retrieval/evidence interface.
-
-## Features
-
-- Python 3.11+
-- FastAPI API
-- SQLite persistence
-- Markdown document ingestion
-- deterministic paragraph-aware chunking with overlap
-- incident NLP extraction for service, severity, HTTP status, error codes and keywords
-- BM25 implemented from scratch (no search library)
-- service/status/error metadata boosts
-- evidence-only response generation
-- citations with document/chunk provenance
-- offline benchmark runner
-- Recall@K, MRR, nDCG@K and Hit@1
-- sample runbooks/postmortems
-- pytest tests
-- Docker + Docker Compose
-- GitHub Actions CI
-
-## Quick start (Windows PowerShell)
+### Windows PowerShell
 
 ```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
-
-incidentrag --db incidentrag.db seed-sample
-incidentrag --db incidentrag.db search "P1 service=checkout HTTP 503 after deployment"
-incidentrag --db incidentrag.db answer "P1 service=checkout HTTP 503 after deployment"
-incidentrag --db incidentrag.db benchmark benchmark\fixtures.json --top-k 3
-
-python -m pytest -q
-python -m ruff check src tests
-python -m uvicorn incidentrag.api:app --reload
+Set-Location IncidentRAG
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\scripts\bootstrap_windows.ps1
 ```
 
-Open `http://127.0.0.1:8000/docs` for the API explorer.
+### macOS / Linux
+
+```bash
+cd IncidentRAG
+bash scripts/bootstrap_unix.sh
+```
+
+### Manual setup
+
+```bash
+python -m venv .venv
+# Windows: .\.venv\Scripts\activate
+# Unix: source .venv/bin/activate
+python -m pip install -e ".[api,dev]"
+incidentrag --db incidentrag.db seed-sample --root data/sample
+incidentrag --db incidentrag.db benchmark benchmark/fixtures.json --top-k 3
+incidentrag --db incidentrag.db answer "P1 service=checkout HTTP 503 error_code=UPSTREAM_UNAVAILABLE"
+```
 
 ## API
 
-### `GET /health`
-Health check.
+```bash
+incidentrag --db incidentrag.db seed-sample --root data/sample
+INCIDENTRAG_DB=incidentrag.db incidentrag serve --host 127.0.0.1 --port 8000
+```
 
-### `POST /documents`
-Ingest or replace a document.
+Endpoints:
 
-### `GET /documents`
-List document metadata.
+- `GET /healthz`
+- `GET /readyz`
+- `POST /v1/search`
+- `POST /v1/answer`
+- `GET /v1/metrics`
 
-### `POST /search`
-Retrieve ranked evidence with structured incident parsing.
+Set `INCIDENTRAG_API_KEY` to require an `X-API-Key` header on `/v1/*` routes.
 
-### `POST /answer`
-Return an evidence-grounded deterministic answer plus citations.
+## PostgreSQL FTS and pgvector
 
-## Benchmark philosophy
+The local core does not require PostgreSQL. For a production-style database backend, see `docs/POSTGRES.md` and `migrations/`.
 
-The bundled benchmark is synthetic and intentionally small. Its purpose is to verify that the evaluation pipeline is real and repeatable; **high scores on the sample fixtures are not a production-quality claim**.
+```bash
+pip install -e ".[postgres]"
+incidentrag postgres-schema
+```
 
-For a serious next phase, expand the dataset with:
+`migrations/001_postgres_fts.sql` creates a generated weighted `tsvector` and a GIN index. `migrations/002_pgvector.sql` enables `vector`, adds `vector(256)`, and creates an HNSW cosine index.
 
-1. larger incident/runbook corpora;
-2. paraphrased and noisy alerts;
-3. distractor documents;
-4. negative/no-answer queries;
-5. service aliases and renamed components;
-6. temporal versions of runbooks;
-7. retrieval regression tests.
+## Model-backed grounded generation
 
-## Planned progression
+The default generator is extractive and has no network dependency. `CallableGroundedGenerator` and `OpenAICompatibleHTTPGenerator` allow a model to be inserted behind the same evidence-only contract. Model output must contain valid `[n]` citations or it is rejected. See `docs/LLM_GROUNDING.md`.
 
-### Phase 1 — implemented here
-- parsing
-- chunking
-- BM25
-- metadata ranking
-- SQLite
-- citations
-- evaluation
-- FastAPI/CLI
+## Evaluation
 
-### Phase 2
-- PostgreSQL full-text search
-- embeddings + pgvector
-- hybrid fusion (RRF)
-- reranker
-- retrieval tracing
-- larger benchmark suite
+Run:
 
-### Phase 3
-- pluggable LLM generation with strict citation grounding
-- faithfulness / answer-relevance evaluation
-- abstention when evidence is weak
-- prompt/version tracking
+```bash
+incidentrag --db incidentrag.db benchmark benchmark/fixtures.json --top-k 3
+```
 
-### Phase 4
-- connect this retrieval core into the later ProcedureOps flagship for durable workflow and workforce automation.
+The included benchmark is deliberately synthetic and small enough to run instantly. Perfect or near-perfect scores on this corpus are **not production claims**. The purpose is regression testing of retrieval, hybrid fusion, and no-answer behavior. See `docs/EVALUATION.md` for the interpretation rules.
+
+## Verification
+
+```bash
+python -m compileall -q src tests scripts
+coverage run -m pytest -q
+coverage report
+python scripts/validate.py
+```
+
+`VALIDATION.md` records the checks executed for the packaged release.
 
 ## Repository layout
 
 ```text
-src/incidentrag/
-  api.py          FastAPI endpoints
-  bm25.py         from-scratch BM25
-  chunking.py     deterministic chunker
-  cli.py          command-line interface
-  evals.py        retrieval metrics
-  generation.py   evidence-only generator
-  models.py       domain + API models
-  nlp.py          incident parsing/tokenization
-  retrieval.py    BM25 + metadata ranking
-  service.py      application service
-  storage.py      SQLite persistence
-benchmark/
-  fixtures.json
-data/sample/
-  runbooks/
-  incidents/
-tests/
+src/incidentrag/        application code
+ tests/                 unit/integration/API tests
+ data/sample/           synthetic runbooks and incidents
+ benchmark/             60-query evaluation fixture
+ migrations/            PostgreSQL FTS + pgvector SQL
+ scripts/               bootstrap and validation utilities
+ docs/                  architecture/operations/evaluation notes
+ .github/workflows/     CI
 ```
 
-## Design constraints
+## Safety boundary
 
-- Retrieval must be measurable independently from generation.
-- Every response must expose provenance.
-- No silent external API calls.
-- No agent framework in the foundation release.
-- Fail closed when no evidence is retrieved.
-- Keep ranking deterministic for reproducible tests.
+IncidentRAG is decision support, not an autonomous remediation agent. It intentionally abstains when evidence is weak and preserves citations so operators can inspect sources before acting. Do not use sample thresholds or synthetic benchmark scores as a substitute for evaluation on your own incident corpus.
 
 ## License
+
 MIT.
